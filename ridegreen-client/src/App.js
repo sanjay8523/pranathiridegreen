@@ -20,7 +20,6 @@ import axios from "axios";
 import {
   Car,
   MapPin,
-  Calendar,
   Search,
   LogOut,
   Navigation,
@@ -973,6 +972,7 @@ const Activity = () => {
 
   useEffect(() => {
     fetchActivity();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchActivity = async () => {
