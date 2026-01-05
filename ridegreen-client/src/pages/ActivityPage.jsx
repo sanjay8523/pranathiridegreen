@@ -1,5 +1,4 @@
-// Save this as: src/pages/ActivityPage.jsx
-
+// Complete ActivityPage.jsx with integrated rating system
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
@@ -17,6 +16,7 @@ import {
   Calendar,
   Clock,
   Navigation,
+  AlertCircle,
 } from "lucide-react";
 import RatingModal from "../components/RatingModal";
 
@@ -50,13 +50,11 @@ const ActivityPage = () => {
   const fetchActivity = async () => {
     try {
       setLoading(true);
-
-      // Fetch rides I posted as driver
-      const ridesResponse = await api.get(`/rides/driver/${user.id}`);
+      const [ridesResponse, bookingsResponse] = await Promise.all([
+        api.get(`/rides/driver/${user.id}`),
+        api.get(`/bookings/passenger/${user.id}`),
+      ]);
       setMyRides(ridesResponse.data);
-
-      // Fetch bookings I made as passenger
-      const bookingsResponse = await api.get(`/bookings/passenger/${user.id}`);
       setMyBookings(bookingsResponse.data);
     } catch (error) {
       console.error("Error fetching activity:", error);
@@ -67,11 +65,18 @@ const ActivityPage = () => {
   };
 
   const handleCompleteRide = async (rideId) => {
-    if (!window.confirm("Mark this ride as completed?")) return;
+    if (
+      !window.confirm(
+        "Mark this ride as completed? Passengers will be able to rate you after this."
+      )
+    )
+      return;
 
     try {
       await api.put(`/rides/${rideId}/complete`);
-      alert("Ride marked as completed!");
+      alert(
+        "Ride marked as completed! Passengers can now rate their experience."
+      );
       fetchActivity();
     } catch (error) {
       console.error("Error completing ride:", error);
@@ -81,7 +86,6 @@ const ActivityPage = () => {
 
   const handleRateUser = async (booking) => {
     try {
-      // Check if can rate
       const response = await api.get(`/ratings/can-rate/${booking.id}`);
       if (!response.data.canRate) {
         alert(response.data.reason);
@@ -342,17 +346,19 @@ const ActivityPage = () => {
                         >
                           {booking.status.toUpperCase()}
                         </span>
-                        <CheckCircle className="text-green-600" size={16} />
-                        <span className="text-sm font-semibold text-green-700">
-                          Payment Confirmed
-                        </span>
+                        {booking.paymentStatus === "completed" && (
+                          <>
+                            <CheckCircle className="text-green-600" size={16} />
+                            <span className="text-sm font-semibold text-green-700">
+                              Payment Confirmed
+                            </span>
+                          </>
+                        )}
                       </div>
                       <div className="bg-white p-3 rounded-lg border border-blue-200">
                         <p className="text-xs text-gray-600">
-                          Status: {booking.status}
-                        </p>
-                        <p className="text-xs text-gray-600 mt-1">
-                          Escrow: {booking.escrowStatus}
+                          Status: {booking.status} | Escrow:{" "}
+                          {booking.escrowStatus}
                         </p>
                       </div>
                     </div>

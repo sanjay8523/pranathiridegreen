@@ -4,7 +4,7 @@ const Ride = require("../models/Ride");
 const Payment = require("../models/Payment");
 const auth = require("../middleware/auth");
 
-// 1. CREATE BOOKING (Called after payment verification)
+// 1. CREATE BOOKING
 router.post("/", auth, async (req, res) => {
   try {
     const {
@@ -20,6 +20,11 @@ router.post("/", auth, async (req, res) => {
     const ride = await Ride.findById(rideId);
     if (!ride) {
       return res.status(404).json({ error: "Ride not found" });
+    }
+
+    // PREVENT SELF-BOOKING
+    if (ride.driver.toString() === req.userId) {
+      return res.status(400).json({ error: "Cannot book your own ride" });
     }
 
     if (ride.availableSeats < seatsBooked) {
@@ -60,10 +65,9 @@ router.post("/", auth, async (req, res) => {
   }
 });
 
-// 2. GET BOOKINGS BY PASSENGER ID - PROTECTED
+// 2. GET BOOKINGS BY PASSENGER ID
 router.get("/passenger/:passengerId", auth, async (req, res) => {
   try {
-    // Verify user can only see their own bookings
     if (req.params.passengerId !== req.userId) {
       return res.status(403).json({ error: "Unauthorized access" });
     }
@@ -81,9 +85,10 @@ router.get("/passenger/:passengerId", auth, async (req, res) => {
 
     const formattedBookings = bookings.map((b) => ({
       id: b._id,
+      driverId: b.ride?.driver?._id,
       driver: b.ride?.driver?.name,
       driverPhone: b.ride?.driver?.phone,
-      driverRating: b.ride?.driver?.rating,
+      driverRating: b.ride?.driver?.rating || 0,
       origin: b.ride?.origin,
       destination: b.ride?.destination,
       date: b.ride?.date,
@@ -96,6 +101,7 @@ router.get("/passenger/:passengerId", auth, async (req, res) => {
       escrowReleaseDate: b.escrowReleaseDate,
       rated: b.rated,
       createdAt: b.createdAt,
+      ride: b.ride,
     }));
 
     res.json(formattedBookings);
@@ -105,7 +111,7 @@ router.get("/passenger/:passengerId", auth, async (req, res) => {
   }
 });
 
-// 3. GET BOOKING BY ID - PROTECTED
+// 3. GET BOOKING BY ID
 router.get("/:id", auth, async (req, res) => {
   try {
     const booking = await Booking.findById(req.params.id)
@@ -120,7 +126,6 @@ router.get("/:id", auth, async (req, res) => {
       return res.status(404).json({ error: "Booking not found" });
     }
 
-    // Check authorization
     const isPassenger = booking.passenger._id.toString() === req.userId;
     const isDriver = booking.ride.driver._id.toString() === req.userId;
 
@@ -134,7 +139,7 @@ router.get("/:id", auth, async (req, res) => {
   }
 });
 
-// 4. CANCEL BOOKING - PROTECTED
+// 4. CANCEL BOOKING
 router.put("/:id/cancel", auth, async (req, res) => {
   try {
     const { reason } = req.body;
@@ -144,22 +149,18 @@ router.put("/:id/cancel", auth, async (req, res) => {
       return res.status(404).json({ error: "Booking not found" });
     }
 
-    // Only passenger can cancel
     if (booking.passenger.toString() !== req.userId) {
-      return res
-        .status(403)
-        .json({ error: "Only passenger can cancel booking" });
+      return res.status(403).json({ error: "Only passenger can cancel" });
     }
 
     if (booking.status === "cancelled") {
-      return res.status(400).json({ error: "Booking already cancelled" });
+      return res.status(400).json({ error: "Already cancelled" });
     }
 
     if (booking.status === "completed") {
       return res.status(400).json({ error: "Cannot cancel completed booking" });
     }
 
-    // Update booking
     booking.status = "cancelled";
     booking.cancellationReason = reason;
     booking.cancelledBy = req.userId;
@@ -168,13 +169,11 @@ router.put("/:id/cancel", auth, async (req, res) => {
     booking.escrowStatus = "refunded";
     await booking.save();
 
-    // Restore ride seats
     const ride = await Ride.findById(booking.ride._id);
     ride.availableSeats += booking.seatsBooked;
     ride.status = "active";
     await ride.save();
 
-    // Update payment status
     if (booking.paymentId) {
       await Payment.findByIdAndUpdate(booking.paymentId, {
         status: "refunded",
@@ -184,7 +183,7 @@ router.put("/:id/cancel", auth, async (req, res) => {
 
     res.json({
       success: true,
-      message: "Booking cancelled successfully. Refund will be processed.",
+      message: "Booking cancelled. Refund will be processed.",
       booking,
     });
   } catch (err) {
@@ -193,7 +192,7 @@ router.put("/:id/cancel", auth, async (req, res) => {
   }
 });
 
-// 5. COMPLETE BOOKING (Mark ride as completed) - PROTECTED
+// 5. COMPLETE BOOKING
 router.put("/:id/complete", auth, async (req, res) => {
   try {
     const booking = await Booking.findById(req.params.id).populate("ride");
@@ -201,11 +200,8 @@ router.put("/:id/complete", auth, async (req, res) => {
       return res.status(404).json({ error: "Booking not found" });
     }
 
-    // Only driver can mark as completed
     if (booking.ride.driver.toString() !== req.userId) {
-      return res
-        .status(403)
-        .json({ error: "Only driver can complete booking" });
+      return res.status(403).json({ error: "Only driver can complete" });
     }
 
     booking.status = "completed";
@@ -216,22 +212,6 @@ router.put("/:id/complete", auth, async (req, res) => {
       message: "Booking marked as completed",
       booking,
     });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 6. GET ALL BOOKINGS (Admin only)
-router.get("/", auth, async (req, res) => {
-  try {
-    const bookings = await Booking.find()
-      .populate("passenger", "name email")
-      .populate({
-        path: "ride",
-        populate: { path: "driver", select: "name email" },
-      })
-      .sort({ createdAt: -1 });
-    res.json(bookings);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

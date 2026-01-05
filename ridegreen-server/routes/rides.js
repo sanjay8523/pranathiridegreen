@@ -4,9 +4,13 @@ const Booking = require("../models/Booking");
 const User = require("../models/User");
 const auth = require("../middleware/auth");
 
-// Helper function to normalize location names for exact matching
+// Enhanced location normalization
 const normalizeLocation = (location) => {
-  return location.toLowerCase().trim().replace(/\s+/g, " ");
+  return location
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/[^\w\s]/g, "");
 };
 
 // 1. POST A RIDE (Driver) - PROTECTED
@@ -26,12 +30,10 @@ router.post("/", auth, async (req, res) => {
     } = req.body;
 
     if (
-      !fromCoords ||
-      !toCoords ||
-      !fromCoords.lat ||
-      !fromCoords.lng ||
-      !toCoords.lat ||
-      !toCoords.lng
+      !fromCoords?.lat ||
+      !fromCoords?.lng ||
+      !toCoords?.lat ||
+      !toCoords?.lng
     ) {
       return res.status(400).json({ error: "Invalid coordinates provided" });
     }
@@ -65,20 +67,11 @@ router.post("/", auth, async (req, res) => {
   }
 });
 
-// 2. GET ALL ACTIVE RIDES WITH EXACT LOCATION MATCHING
+// 2. GET ALL ACTIVE RIDES - WITH EXACT LOCATION MATCHING
 router.get("/", async (req, res) => {
   try {
-    const {
-      origin,
-      destination,
-      date,
-      minSeats,
-      maxPrice,
-      sortBy = "createdAt",
-      sortOrder = "desc",
-    } = req.query;
+    const { origin, destination, date } = req.query;
 
-    // Build filter query with exact matching
     let filter = {
       status: "active",
       availableSeats: { $gt: 0 },
@@ -97,24 +90,12 @@ router.get("/", async (req, res) => {
       filter.date = date;
     }
 
-    if (minSeats) {
-      filter.availableSeats = { $gte: parseInt(minSeats) };
-    }
-
-    if (maxPrice) {
-      filter.price = { $lte: parseInt(maxPrice) };
-    }
-
-    // Build sort object
-    const sort = {};
-    sort[sortBy] = sortOrder === "asc" ? 1 : -1;
-
     const rides = await Ride.find(filter)
       .populate(
         "driver",
         "name email phone rating totalRatings profilePicture verified ridesCompleted"
       )
-      .sort(sort)
+      .sort({ createdAt: -1 })
       .limit(100);
 
     res.json(rides);
@@ -124,35 +105,7 @@ router.get("/", async (req, res) => {
   }
 });
 
-// 3. SEARCH RIDES (Exact matching only)
-router.get("/search", async (req, res) => {
-  try {
-    const { from, to, date } = req.query;
-
-    if (!from || !to) {
-      return res.status(400).json({ error: "Origin and destination required" });
-    }
-
-    const rides = await Ride.find({
-      origin: normalizeLocation(from),
-      destination: normalizeLocation(to),
-      date: date || { $gte: new Date().toISOString().split("T")[0] },
-      status: "active",
-      availableSeats: { $gt: 0 },
-    })
-      .populate(
-        "driver",
-        "name email phone rating totalRatings profilePicture verified ridesCompleted"
-      )
-      .sort({ createdAt: -1 });
-
-    res.json(rides);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 4. GET RIDES BY DRIVER ID WITH COMPLETE BOOKING INFO
+// 3. GET RIDES BY DRIVER ID
 router.get("/driver/:driverId", async (req, res) => {
   try {
     const rides = await Ride.find({ driver: req.params.driverId })
@@ -173,6 +126,7 @@ router.get("/driver/:driverId", async (req, res) => {
           ...ride.toObject(),
           bookings: bookings.map((b) => ({
             id: b._id,
+            passengerId: b.passenger?._id,
             passenger: b.passengerName || b.passenger?.name,
             passengerEmail: b.passengerEmail || b.passenger?.email,
             phone: b.passengerPhone,
@@ -203,7 +157,7 @@ router.get("/driver/:driverId", async (req, res) => {
   }
 });
 
-// 5. GET SINGLE RIDE BY ID WITH DRIVER FULL INFO
+// 4. GET SINGLE RIDE BY ID
 router.get("/:id", async (req, res) => {
   try {
     const ride = await Ride.findById(req.params.id).populate(
@@ -215,7 +169,6 @@ router.get("/:id", async (req, res) => {
       return res.status(404).json({ error: "Ride not found" });
     }
 
-    // Get bookings count for this ride
     const bookingsCount = await Booking.countDocuments({
       ride: ride._id,
       status: { $in: ["confirmed", "completed"] },
@@ -230,7 +183,7 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-// 6. UPDATE RIDE - PROTECTED
+// 5. UPDATE RIDE - PROTECTED
 router.put("/:id", auth, async (req, res) => {
   try {
     const ride = await Ride.findById(req.params.id);
@@ -240,12 +193,9 @@ router.put("/:id", auth, async (req, res) => {
     }
 
     if (ride.driver.toString() !== req.userId) {
-      return res
-        .status(403)
-        .json({ error: "Not authorized to update this ride" });
+      return res.status(403).json({ error: "Not authorized" });
     }
 
-    // Normalize location if being updated
     if (req.body.origin) {
       req.body.origin = normalizeLocation(req.body.origin);
     }
@@ -268,7 +218,7 @@ router.put("/:id", auth, async (req, res) => {
   }
 });
 
-// 7. MARK RIDE AS COMPLETED - PROTECTED
+// 6. MARK RIDE AS COMPLETED - PROTECTED
 router.put("/:id/complete", auth, async (req, res) => {
   try {
     const ride = await Ride.findById(req.params.id);
@@ -278,28 +228,26 @@ router.put("/:id/complete", auth, async (req, res) => {
     }
 
     if (ride.driver.toString() !== req.userId) {
-      return res
-        .status(403)
-        .json({ error: "Only driver can mark ride as completed" });
+      return res.status(403).json({ error: "Only driver can complete ride" });
     }
 
     ride.status = "completed";
     await ride.save();
 
-    // Update all confirmed bookings to completed
+    // Update bookings to completed
     await Booking.updateMany(
       { ride: req.params.id, status: "confirmed" },
       { $set: { status: "completed" } }
     );
 
-    // Increment driver's rides completed count
+    // Increment driver's completed rides
     await User.findByIdAndUpdate(req.userId, {
       $inc: { ridesCompleted: 1 },
     });
 
     res.json({
       success: true,
-      message: "Ride marked as completed successfully",
+      message: "Ride marked as completed",
       ride,
     });
   } catch (err) {
@@ -308,7 +256,7 @@ router.put("/:id/complete", auth, async (req, res) => {
   }
 });
 
-// 8. CANCEL RIDE - PROTECTED
+// 7. CANCEL RIDE - PROTECTED
 router.delete("/:id", auth, async (req, res) => {
   try {
     const ride = await Ride.findById(req.params.id);
@@ -318,12 +266,9 @@ router.delete("/:id", auth, async (req, res) => {
     }
 
     if (ride.driver.toString() !== req.userId) {
-      return res
-        .status(403)
-        .json({ error: "Not authorized to cancel this ride" });
+      return res.status(403).json({ error: "Not authorized" });
     }
 
-    // Check if there are confirmed bookings
     const bookings = await Booking.find({
       ride: req.params.id,
       status: "confirmed",
@@ -331,15 +276,14 @@ router.delete("/:id", auth, async (req, res) => {
 
     if (bookings.length > 0) {
       return res.status(400).json({
-        error:
-          "Cannot cancel ride with confirmed bookings. Please contact passengers first.",
+        error: "Cannot cancel ride with confirmed bookings",
       });
     }
 
     ride.status = "cancelled";
     await ride.save();
 
-    res.json({ success: true, message: "Ride cancelled successfully" });
+    res.json({ success: true, message: "Ride cancelled" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
