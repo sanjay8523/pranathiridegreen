@@ -1,3 +1,5 @@
+// Save as: src/App.js
+
 import React, { useState, useEffect } from "react";
 import {
   BrowserRouter as Router,
@@ -28,19 +30,22 @@ import {
   LocateFixed,
   Phone,
   Mail,
-  Users,
-  CheckCircle,
   AlertCircle,
-  TrendingUp,
   Loader,
+  User as UserIcon,
 } from "lucide-react";
 import "leaflet/dist/leaflet.css";
 
-// API Configuration
+// Note: Ensure these components exist in your project structure
+// or create placeholder files for them to avoid build errors.
+import ActivityPage from "./pages/ActivityPage";
+import UserProfile from "./pages/UserProfile";
+
+// --- API Configuration ---
 const API_URL = process.env.REACT_APP_API_URL || "http://localhost:5000/api";
 const RAZORPAY_KEY = process.env.REACT_APP_RAZORPAY_KEY_ID;
 
-// Axios instance with auth token
+// Axios instance
 const api = axios.create({
   baseURL: API_URL,
 });
@@ -53,7 +58,7 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Fix Leaflet Icons
+// --- Leaflet Icon Fixes ---
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl:
@@ -78,7 +83,8 @@ const userIcon = new L.Icon({
   popupAnchor: [0, -15],
 });
 
-// Geocoding function using Nominatim (Free)
+// --- Helper Functions ---
+
 async function geocodeLocation(locationName) {
   try {
     const response = await axios.get(
@@ -101,7 +107,7 @@ async function geocodeLocation(locationName) {
 
 function getDistance(lat1, lon1, lat2, lon2) {
   if (!lat1 || !lon1 || !lat2 || !lon2) return 0;
-  const R = 6371;
+  const R = 6371; // Radius of the earth in km
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLon = ((lon2 - lon1) * Math.PI) / 180;
   const a =
@@ -114,7 +120,8 @@ function getDistance(lat1, lon1, lat2, lon2) {
   return (R * c).toFixed(1);
 }
 
-// MapView Component
+// --- Components ---
+
 const MapView = ({ from, to, userLoc, showRoute = true }) => {
   function ChangeView({ bounds }) {
     const map = useMap();
@@ -192,7 +199,6 @@ const MapView = ({ from, to, userLoc, showRoute = true }) => {
   );
 };
 
-// Navbar Component
 const Navbar = ({ user, logout }) => {
   const navigate = useNavigate();
   return (
@@ -232,6 +238,13 @@ const Navbar = ({ user, logout }) => {
                 Post Ride
               </button>
               <button
+                onClick={() => navigate(`/profile/${user.id}`)}
+                className="text-white/90 hover:text-white transition"
+                title="My Profile"
+              >
+                <UserIcon size={20} />
+              </button>
+              <button
                 onClick={logout}
                 className="text-white/90 hover:text-red-300 transition"
               >
@@ -260,7 +273,6 @@ const Navbar = ({ user, logout }) => {
   );
 };
 
-// Search Page
 const SearchRides = () => {
   const [rides, setRides] = useState([]);
   const [userLoc, setUserLoc] = useState(null);
@@ -376,12 +388,24 @@ const SearchRides = () => {
                     >
                       <div className="flex justify-between items-start mb-4">
                         <div className="flex gap-4 flex-1">
-                          <div className="w-14 h-14 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-full flex items-center justify-center text-white font-bold text-2xl shadow-lg">
+                          <div
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/profile/${ride.driver._id}`);
+                            }}
+                            className="w-14 h-14 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-full flex items-center justify-center text-white font-bold text-2xl shadow-lg cursor-pointer hover:scale-110 transition"
+                          >
                             {ride.driver?.name?.[0]}
                           </div>
                           <div className="flex-1">
                             <div className="flex items-center gap-2 mb-1">
-                              <h3 className="font-bold text-lg text-gray-800">
+                              <h3
+                                className="font-bold text-lg text-gray-800 cursor-pointer hover:text-emerald-600"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  navigate(`/profile/${ride.driver._id}`);
+                                }}
+                              >
                                 {ride.driver?.name}
                               </h3>
                               {ride.verified && (
@@ -391,11 +415,14 @@ const SearchRides = () => {
                             <div className="flex items-center gap-1 text-yellow-500 mb-2">
                               <Star size={14} fill="currentColor" />
                               <span className="text-sm font-semibold">
-                                {ride.driver?.rating || 5.0}
+                                {(ride.driver?.rating || 0).toFixed(1)}
+                              </span>
+                              <span className="text-xs text-gray-500">
+                                ({ride.driver?.totalRatings || 0})
                               </span>
                             </div>
                             <div className="flex flex-wrap gap-2">
-                              <span className="bg-emerald-100 text-emerald-700 text-xs px-3 py-1 rounded-full font-semibold">
+                              <span className="bg-emerald-100 text-emerald-700 text-xs px-3 py-1 rounded-full font-semibold capitalize">
                                 {dist} km away
                               </span>
                               <span className="bg-blue-100 text-blue-700 text-xs px-3 py-1 rounded-full font-semibold">
@@ -416,12 +443,12 @@ const SearchRides = () => {
                       </div>
                       <div className="flex items-center gap-3 text-sm bg-gray-50 p-4 rounded-xl">
                         <MapPin size={18} className="text-emerald-500" />
-                        <span className="font-semibold text-gray-700">
+                        <span className="font-semibold text-gray-700 capitalize">
                           {ride.origin}
                         </span>
                         <Navigation size={16} className="text-gray-400" />
                         <MapPin size={18} className="text-red-500" />
-                        <span className="font-semibold text-gray-700">
+                        <span className="font-semibold text-gray-700 capitalize">
                           {ride.destination}
                         </span>
                       </div>
@@ -452,7 +479,6 @@ const SearchRides = () => {
   );
 };
 
-// Ride Details Page with Razorpay
 const RideDetails = () => {
   const { state } = useLocation();
   const navigate = useNavigate();
@@ -501,7 +527,6 @@ const RideDetails = () => {
     try {
       const user = JSON.parse(localStorage.getItem("user"));
 
-      // Create Razorpay order
       const orderResponse = await api.post("/payments/create-order", {
         rideId: ride._id,
         seatsBooked: seats,
@@ -512,7 +537,6 @@ const RideDetails = () => {
 
       const { orderId, amount, currency, bookingId, key } = orderResponse.data;
 
-      // Load Razorpay script
       const scriptLoaded = await loadRazorpayScript();
       if (!scriptLoaded) {
         alert("Failed to load payment gateway. Please try again.");
@@ -520,7 +544,6 @@ const RideDetails = () => {
         return;
       }
 
-      // Razorpay options
       const options = {
         key: key,
         amount: amount * 100,
@@ -531,7 +554,6 @@ const RideDetails = () => {
         image: "https://cdn-icons-png.flaticon.com/512/3202/3202926.png",
         handler: async function (response) {
           try {
-            // Verify payment
             const verifyResponse = await api.post("/payments/verify-payment", {
               razorpay_order_id: response.razorpay_order_id,
               razorpay_payment_id: response.razorpay_payment_id,
@@ -582,11 +604,17 @@ const RideDetails = () => {
           <div>
             <div className="bg-white p-8 rounded-3xl shadow-xl">
               <div className="flex items-center gap-4 mb-6 pb-6 border-b">
-                <div className="w-16 h-16 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-full flex items-center justify-center text-white font-bold text-3xl shadow-lg">
+                <div
+                  onClick={() => navigate(`/profile/${ride.driver._id}`)}
+                  className="w-16 h-16 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-full flex items-center justify-center text-white font-bold text-3xl shadow-lg cursor-pointer hover:scale-110 transition"
+                >
                   {ride.driver?.name?.[0]}
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold text-gray-800">
+                  <h3
+                    className="text-xl font-bold text-gray-800 cursor-pointer hover:text-emerald-600"
+                    onClick={() => navigate(`/profile/${ride.driver._id}`)}
+                  >
                     {ride.driver?.name}
                   </h3>
                   <div className="flex items-center gap-2">
@@ -596,7 +624,10 @@ const RideDetails = () => {
                       className="text-yellow-500"
                     />
                     <span className="font-semibold">
-                      {ride.driver?.rating || 5.0}
+                      {(ride.driver?.rating || 0).toFixed(1)}
+                    </span>
+                    <span className="text-sm text-gray-500">
+                      ({ride.driver?.totalRatings || 0} ratings)
                     </span>
                     {ride.verified && (
                       <>
@@ -605,6 +636,9 @@ const RideDetails = () => {
                       </>
                     )}
                   </div>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {ride.driver?.ridesCompleted || 0} rides completed
+                  </p>
                 </div>
               </div>
 
@@ -748,7 +782,6 @@ const RideDetails = () => {
   );
 };
 
-// Post Ride Page
 const PostRide = () => {
   const navigate = useNavigate();
   const [form, setForm] = useState({
@@ -793,7 +826,6 @@ const PostRide = () => {
     setLoading(true);
 
     try {
-      // Geocode destination
       const destCoords = await geocodeLocation(form.destination);
       if (!destCoords) {
         alert("Could not find destination location. Please check the name.");
@@ -801,7 +833,6 @@ const PostRide = () => {
         return;
       }
 
-      // If origin is NOT "My Current Location", we need to geocode the input city name
       let originCoords = coords.from;
       if (form.origin !== "My Current Location") {
         originCoords = await geocodeLocation(form.origin);
@@ -812,7 +843,6 @@ const PostRide = () => {
         }
       }
 
-      // Post ride to backend
       await api.post("/rides", {
         origin: form.origin,
         destination: form.destination,
@@ -963,221 +993,54 @@ const PostRide = () => {
   );
 };
 
-// Activity Page - Shows booking history
-const Activity = () => {
-  const [myRides, setMyRides] = useState([]);
-  const [myBookings, setMyBookings] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const user = JSON.parse(localStorage.getItem("user"));
-
-  useEffect(() => {
-    fetchActivity();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const fetchActivity = async () => {
-    try {
-      setLoading(true);
-
-      // Fetch rides I posted as driver
-      const ridesResponse = await api.get(`/rides/driver/${user.id}`);
-      setMyRides(ridesResponse.data);
-
-      // Fetch bookings I made as passenger
-      const bookingsResponse = await api.get(`/bookings/passenger/${user.id}`);
-      setMyBookings(bookingsResponse.data);
-    } catch (error) {
-      console.error("Error fetching activity:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen pt-28 flex items-center justify-center">
-        <Loader className="animate-spin text-emerald-600" size={48} />
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen pt-28 px-4 bg-gradient-to-br from-emerald-50 to-teal-50">
-      <div className="max-w-7xl mx-auto">
-        <h1 className="text-4xl font-black mb-8 text-gray-800">My Activity</h1>
-
-        <div className="grid md:grid-cols-2 gap-8">
-          {/* Rides I Posted (Driver View) */}
-          <div className="bg-white p-6 rounded-3xl shadow-xl">
-            <div className="flex items-center gap-3 mb-6">
-              <Car className="text-emerald-600" size={32} />
-              <h2 className="text-2xl font-bold text-gray-800">
-                Rides I Posted
-              </h2>
-            </div>
-
-            {myRides.length === 0 ? (
-              <p className="text-gray-500 text-center py-8">
-                No rides posted yet
-              </p>
-            ) : (
-              <div className="space-y-4">
-                {myRides.map((ride) => (
-                  <div
-                    key={ride._id}
-                    className="bg-gradient-to-r from-emerald-50 to-teal-50 p-6 rounded-xl border-2 border-emerald-200"
-                  >
-                    <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <h3 className="font-bold text-lg text-gray-800">
-                          {ride.origin} → {ride.destination}
-                        </h3>
-                        <p className="text-sm text-gray-600">
-                          {ride.date} at {ride.time}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-2xl font-black text-emerald-600">
-                          ₹{ride.totalEarnings || 0}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          Total Earnings
-                        </div>
-                      </div>
-                    </div>
-
-                    {ride.bookings && ride.bookings.length > 0 && (
-                      <div className="mb-4">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Users className="text-emerald-600" size={16} />
-                          <span className="text-sm font-semibold text-gray-700">
-                            Passengers ({ride.bookings.length})
-                          </span>
-                        </div>
-                        {ride.bookings.map((booking, idx) => (
-                          <div
-                            key={idx}
-                            className="bg-white p-3 rounded-lg mb-2 border border-emerald-200"
-                          >
-                            <div className="flex justify-between items-center">
-                              <div>
-                                <p className="font-semibold text-gray-800">
-                                  {booking.passenger}
-                                </p>
-                                <p className="text-xs text-gray-600">
-                                  {booking.phone}
-                                </p>
-                              </div>
-                              <div className="text-right">
-                                <span className="text-sm font-bold text-gray-800">
-                                  {booking.seats} seats
-                                </span>
-                                {booking.paid && (
-                                  <div className="flex items-center gap-1 text-green-600 text-xs mt-1">
-                                    <CheckCircle size={12} />
-                                    <span>Paid (Escrow)</span>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
-                      <p className="text-xs text-blue-800">
-                        <Shield className="inline mr-1" size={14} />
-                        Funds will be released 2 days after ride completion
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Rides I Booked (Passenger View) */}
-          <div className="bg-white p-6 rounded-3xl shadow-xl">
-            <div className="flex items-center gap-3 mb-6">
-              <MapPin className="text-blue-600" size={32} />
-              <h2 className="text-2xl font-bold text-gray-800">My Bookings</h2>
-            </div>
-
-            {myBookings.length === 0 ? (
-              <p className="text-gray-500 text-center py-8">No bookings yet</p>
-            ) : (
-              <div className="space-y-4">
-                {myBookings.map((booking) => (
-                  <div
-                    key={booking.id}
-                    className="bg-gradient-to-r from-blue-50 to-cyan-50 p-6 rounded-xl border-2 border-blue-200"
-                  >
-                    <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <h3 className="font-bold text-lg text-gray-800">
-                          {booking.origin} → {booking.destination}
-                        </h3>
-                        <p className="text-sm text-gray-600">
-                          Driver: {booking.driver}
-                        </p>
-                        <p className="text-sm text-gray-600">
-                          {booking.date} at {booking.time}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-2xl font-black text-blue-600">
-                          ₹{booking.amount}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {booking.seats} seats
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <CheckCircle className="text-green-600" size={16} />
-                        <span className="text-sm font-semibold text-green-700">
-                          Payment Confirmed
-                        </span>
-                      </div>
-                      <div className="bg-white p-3 rounded-lg border border-blue-200">
-                        <p className="text-xs text-gray-600">
-                          Status: {booking.status}
-                        </p>
-                        <p className="text-xs text-gray-600 mt-1">
-                          Escrow: {booking.escrowStatus}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="mt-4 bg-green-50 p-3 rounded-lg border border-green-200">
-                      <p className="text-xs text-green-800">
-                        <TrendingUp className="inline mr-1" size={14} />
-                        Your ride is {booking.status}! Driver will receive
-                        payment 2 days after completion.
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Auth Pages (Login/Register)
 const Auth = ({ type, setUser }) => {
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState({});
   const navigate = useNavigate();
+
+  const validatePassword = (password) => {
+    const errors = [];
+    if (password.length < 8) {
+      errors.push("At least 8 characters");
+    }
+    if (!/[A-Z]/.test(password)) {
+      errors.push("One uppercase letter");
+    }
+    if (!/[a-z]/.test(password)) {
+      errors.push("One lowercase letter");
+    }
+    if (!/[0-9]/.test(password)) {
+      errors.push("One number");
+    }
+    if (/[^A-Za-z0-9]/.test(password)) {
+      errors.push("No special characters");
+    }
+    return errors;
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setErrors({});
+
+    // Validation for registration
+    if (type === "register") {
+      if (form.name.length < 3) {
+        setErrors({ name: "Name must be at least 3 characters" });
+        return;
+      }
+      if (!/^[A-Za-z\s]+$/.test(form.name)) {
+        setErrors({ name: "Name must contain only letters" });
+        return;
+      }
+
+      const passwordErrors = validatePassword(form.password);
+      if (passwordErrors.length > 0) {
+        setErrors({ password: passwordErrors.join(", ") });
+        return;
+      }
+    }
+
     setLoading(true);
 
     try {
@@ -1190,11 +1053,12 @@ const Auth = ({ type, setUser }) => {
       navigate("/search");
     } catch (err) {
       console.error("Auth error:", err);
-      alert(
-        err.response?.data?.msg ||
+      setErrors({
+        general:
           err.response?.data?.error ||
-          "Authentication failed"
-      );
+          err.response?.data?.msg ||
+          "Authentication failed",
+      });
     } finally {
       setLoading(false);
     }
@@ -1217,14 +1081,19 @@ const Auth = ({ type, setUser }) => {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {type === "register" && (
-            <input
-              type="text"
-              placeholder="Full Name"
-              value={form.name}
-              className="w-full bg-gray-50 border-2 border-gray-200 p-4 rounded-xl text-gray-800 outline-none focus:border-emerald-500"
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              required
-            />
+            <div>
+              <input
+                type="text"
+                placeholder="Full Name"
+                value={form.name}
+                className="w-full bg-gray-50 border-2 border-gray-200 p-4 rounded-xl text-gray-800 outline-none focus:border-emerald-500"
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                required
+              />
+              {errors.name && (
+                <p className="text-red-500 text-sm mt-1">{errors.name}</p>
+              )}
+            </div>
           )}
           <input
             type="email"
@@ -1234,14 +1103,34 @@ const Auth = ({ type, setUser }) => {
             onChange={(e) => setForm({ ...form, email: e.target.value })}
             required
           />
-          <input
-            type="password"
-            placeholder="Password"
-            value={form.password}
-            className="w-full bg-gray-50 border-2 border-gray-200 p-4 rounded-xl text-gray-800 outline-none focus:border-emerald-500"
-            onChange={(e) => setForm({ ...form, password: e.target.value })}
-            required
-          />
+          <div>
+            <input
+              type="password"
+              placeholder="Password"
+              value={form.password}
+              className="w-full bg-gray-50 border-2 border-gray-200 p-4 rounded-xl text-gray-800 outline-none focus:border-emerald-500"
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
+              required
+            />
+            {errors.password && (
+              <p className="text-red-500 text-sm mt-1">{errors.password}</p>
+            )}
+            {type === "register" && (
+              <div className="mt-2 text-xs text-gray-600 space-y-1">
+                <p>Password must contain:</p>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>At least 8 characters</li>
+                  <li>One uppercase letter</li>
+                  <li>One lowercase letter</li>
+                  <li>One number</li>
+                  <li>No special characters</li>
+                </ul>
+              </div>
+            )}
+          </div>
+          {errors.general && (
+            <p className="text-red-500 text-sm text-center">{errors.general}</p>
+          )}
           <button
             disabled={loading}
             className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white py-4 rounded-xl font-bold text-lg shadow-xl transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
@@ -1273,7 +1162,8 @@ const Auth = ({ type, setUser }) => {
   );
 };
 
-// Main App Component
+// --- Main App Component ---
+
 function App() {
   const [user, setUser] = useState(
     localStorage.getItem("user")
@@ -1333,7 +1223,15 @@ function App() {
           path="/activity"
           element={
             <Protected>
-              <Activity />
+              <ActivityPage />
+            </Protected>
+          }
+        />
+        <Route
+          path="/profile/:userId"
+          element={
+            <Protected>
+              <UserProfile />
             </Protected>
           }
         />
