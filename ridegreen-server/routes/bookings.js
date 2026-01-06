@@ -28,7 +28,9 @@ router.post("/", auth, async (req, res) => {
     }
 
     if (ride.availableSeats < seatsBooked) {
-      return res.status(400).json({ error: "Not enough seats available" });
+      return res.status(400).json({
+        error: `Only ${ride.availableSeats} seat(s) available. You requested ${seatsBooked} seat(s).`,
+      });
     }
 
     const booking = new Booking({
@@ -48,16 +50,16 @@ router.post("/", auth, async (req, res) => {
 
     await booking.save();
 
+    // UPDATE AVAILABLE SEATS - BUT DON'T AUTO-COMPLETE
     ride.availableSeats -= seatsBooked;
-    if (ride.availableSeats === 0) {
-      ride.status = "completed";
-    }
+    // REMOVED: Auto-complete logic - driver must manually complete
     await ride.save();
 
     res.json({
       success: true,
       booking,
       message: "Booking confirmed! Payment held in escrow.",
+      remainingSeats: ride.availableSeats,
     });
   } catch (err) {
     console.error("Booking error:", err);
@@ -169,9 +171,9 @@ router.put("/:id/cancel", auth, async (req, res) => {
     booking.escrowStatus = "refunded";
     await booking.save();
 
+    // RESTORE AVAILABLE SEATS
     const ride = await Ride.findById(booking.ride._id);
     ride.availableSeats += booking.seatsBooked;
-    ride.status = "active";
     await ride.save();
 
     if (booking.paymentId) {
@@ -185,6 +187,7 @@ router.put("/:id/cancel", auth, async (req, res) => {
       success: true,
       message: "Booking cancelled. Refund will be processed.",
       booking,
+      restoredSeats: ride.availableSeats,
     });
   } catch (err) {
     console.error("Cancellation error:", err);
@@ -192,7 +195,7 @@ router.put("/:id/cancel", auth, async (req, res) => {
   }
 });
 
-// 5. COMPLETE BOOKING
+// 5. COMPLETE BOOKING (Not used - rides are completed via rides route)
 router.put("/:id/complete", auth, async (req, res) => {
   try {
     const booking = await Booking.findById(req.params.id).populate("ride");

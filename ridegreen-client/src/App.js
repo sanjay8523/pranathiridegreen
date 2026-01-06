@@ -1,5 +1,5 @@
 // src/App.js
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   BrowserRouter as Router,
   Routes,
@@ -117,7 +117,7 @@ function getDistance(lat1, lon1, lat2, lon2) {
   return (R * c).toFixed(1);
 }
 
-// --- Components ---
+// --- Shared Components ---
 
 const MapView = ({ from, to, userLoc, showRoute = true }) => {
   function ChangeView({ bounds }) {
@@ -179,16 +179,6 @@ const MapView = ({ from, to, userLoc, showRoute = true }) => {
             weight={4}
             opacity={0.8}
             dashArray="10, 10"
-          />
-        )}
-
-        {showRoute && userLoc && from && (
-          <Polyline
-            positions={[[userLoc.lat, userLoc.lng], from]}
-            color="#3b82f6"
-            weight={3}
-            opacity={0.6}
-            dashArray="5, 10"
           />
         )}
       </MapContainer>
@@ -269,6 +259,8 @@ const Navbar = ({ user, logout }) => {
   );
 };
 
+// --- Your Exact SearchRides Component Integrated ---
+
 const SearchRides = () => {
   const [rides, setRides] = useState([]);
   const [userLoc, setUserLoc] = useState(null);
@@ -279,27 +271,12 @@ const SearchRides = () => {
   const navigate = useNavigate();
   const user = JSON.parse(localStorage.getItem("user"));
 
-  useEffect(() => {
-    fetchRides();
-    getUserLocation();
-  }, []);
-
-  const getUserLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) =>
-          setUserLoc({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        (err) => console.error("Location access denied:", err)
-      );
-    }
-  };
-
-  const fetchRides = async () => {
+  const fetchRides = useCallback(async () => {
     try {
       setLoading(true);
       const response = await api.get("/rides");
       const availableRides = response.data.filter(
-        (ride) => ride.driver._id !== user.id
+        (ride) => ride.driver._id !== user.id && ride.availableSeats > 0
       );
       setRides(availableRides);
       setFilteredRides(availableRides);
@@ -308,7 +285,18 @@ const SearchRides = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user.id]);
+
+  useEffect(() => {
+    fetchRides();
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) =>
+          setUserLoc({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        (err) => console.error("Location access denied:", err)
+      );
+    }
+  }, [fetchRides]);
 
   useEffect(() => {
     const normalizeText = (text) =>
@@ -328,6 +316,11 @@ const SearchRides = () => {
     });
     setFilteredRides(filtered);
   }, [searchOrigin, searchDestination, rides]);
+
+  const viewDriverProfile = (e, driverId) => {
+    e.stopPropagation();
+    navigate(`/profile/${driverId}`);
+  };
 
   if (loading)
     return (
@@ -370,15 +363,18 @@ const SearchRides = () => {
           </div>
         </div>
 
-        <div className="grid lg:grid-cols-2 gap-8">
-          <div className="space-y-4">
+        <div className="grid lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 space-y-4">
             <h2 className="text-3xl font-bold text-gray-800">
               Available Rides
             </h2>
+
             {filteredRides.length === 0 ? (
               <div className="p-12 bg-white rounded-2xl text-center shadow-lg">
                 <AlertCircle className="mx-auto mb-4 text-gray-400" size={48} />
-                <p>No rides match your search</p>
+                <p className="text-xl text-gray-600">
+                  No rides match your search
+                </p>
               </div>
             ) : (
               filteredRides.map((ride) => {
@@ -401,46 +397,104 @@ const SearchRides = () => {
                     }
                   >
                     <div className="flex justify-between items-start mb-4">
-                      <div className="flex gap-4">
-                        <div className="w-14 h-14 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-full flex items-center justify-center text-white font-bold text-2xl">
+                      <div className="flex gap-4 flex-1">
+                        <div
+                          className="w-14 h-14 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-full flex items-center justify-center text-white font-bold text-2xl cursor-pointer hover:scale-110 transition-transform"
+                          onClick={(e) => viewDriverProfile(e, ride.driver._id)}
+                          title="View Driver Profile"
+                        >
                           {ride.driver?.name?.[0]}
                         </div>
-                        <div>
-                          <h3 className="font-bold text-lg">
-                            {ride.driver?.name}
-                          </h3>
-                          <div className="flex items-center gap-1 text-yellow-500">
-                            <Star size={14} fill="currentColor" />{" "}
-                            {(ride.driver?.rating || 0).toFixed(1)}
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-bold text-lg">
+                              {ride.driver?.name}
+                            </h3>
+                            <button
+                              onClick={(e) =>
+                                viewDriverProfile(e, ride.driver._id)
+                              }
+                              className="text-emerald-600 hover:text-emerald-700"
+                              title="View Profile"
+                            >
+                              <UserIcon size={16} />
+                            </button>
                           </div>
-                          <span className="bg-emerald-100 text-emerald-700 text-xs px-2 py-1 rounded-full">
+                          <div className="flex items-center gap-2 mt-1">
+                            <div className="flex items-center gap-1 text-yellow-500">
+                              <Star size={14} fill="currentColor" />{" "}
+                              {(ride.driver?.rating || 0).toFixed(1)}
+                            </div>
+                            <span className="text-gray-400">•</span>
+                            <span className="text-sm text-gray-600">
+                              {ride.driver?.ridesCompleted || 0} rides
+                            </span>
+                          </div>
+                          <span className="bg-emerald-100 text-emerald-700 text-xs px-2 py-1 rounded-full inline-block mt-1">
                             {dist} km away
                           </span>
                         </div>
                       </div>
-                      <div className="text-right text-3xl font-black text-emerald-600">
-                        ₹{ride.price}
+                      <div className="text-right">
+                        <div className="text-3xl font-black text-emerald-600">
+                          ₹{ride.price}
+                        </div>
+                        <div className="text-sm text-gray-500">per seat</div>
+                        <div className="mt-2 text-sm font-semibold text-purple-600">
+                          {ride.availableSeats} / {ride.seats} seats left
+                        </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-3 text-sm bg-gray-50 p-4 rounded-xl">
-                      <MapPin size={18} className="text-emerald-500" />{" "}
+                      <MapPin
+                        size={18}
+                        className="text-emerald-500 flex-shrink-0"
+                      />{" "}
                       <span className="font-semibold">{ride.origin}</span>
-                      <Navigation size={16} className="text-gray-400" />
-                      <MapPin size={18} className="text-red-500" />{" "}
+                      <Navigation
+                        size={16}
+                        className="text-gray-400 flex-shrink-0"
+                      />
+                      <MapPin
+                        size={18}
+                        className="text-red-500 flex-shrink-0"
+                      />{" "}
                       <span className="font-semibold">{ride.destination}</span>
+                    </div>
+                    <div className="mt-3 flex items-center gap-4 text-sm text-gray-600">
+                      <span>📅 {ride.date}</span>
+                      <span>🕐 {ride.time}</span>
                     </div>
                   </div>
                 );
               })
             )}
           </div>
+
+          {/* MAP VIEW - RIGHT SIDE */}
           <div className="hidden lg:block sticky top-24 h-[600px]">
-            <MapView
-              userLoc={userLoc}
-              from={null}
-              to={null}
-              showRoute={false}
-            />
+            {filteredRides.length > 0 && (
+              <MapView
+                from={
+                  filteredRides[0]
+                    ? [
+                        filteredRides[0].fromCoords.lat,
+                        filteredRides[0].fromCoords.lng,
+                      ]
+                    : null
+                }
+                to={
+                  filteredRides[0]
+                    ? [
+                        filteredRides[0].toCoords.lat,
+                        filteredRides[0].toCoords.lng,
+                      ]
+                    : null
+                }
+                userLoc={userLoc}
+                showRoute={false}
+              />
+            )}
           </div>
         </div>
       </div>
@@ -448,7 +502,7 @@ const SearchRides = () => {
   );
 };
 
-// --- Your Fixed RideDetails Component ---
+// --- RideDetails Component ---
 const RideDetails = () => {
   const { state } = useLocation();
   const navigate = useNavigate();
@@ -464,28 +518,11 @@ const RideDetails = () => {
 
   useEffect(() => {
     if (user) setEmail(user.email);
-    loadRazorpayScript();
-  }, []);
-
-  const loadRazorpayScript = () => {
-    return new Promise((resolve) => {
-      if (window.Razorpay) {
-        setRazorpayLoaded(true);
-        resolve(true);
-        return;
-      }
-      const script = document.createElement("script");
-      script.src = "https://checkout.razorpay.com/v1/checkout.js";
-      script.onload = () => {
-        setRazorpayLoaded(true);
-        resolve(true);
-      };
-      script.onerror = () => {
-        resolve(false);
-      };
-      document.body.appendChild(script);
-    });
-  };
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.onload = () => setRazorpayLoaded(true);
+    document.body.appendChild(script);
+  }, [user]);
 
   if (!ride) return <Navigate to="/search" />;
   const isOwnRide = ride.driver._id === user.id;
@@ -511,15 +548,6 @@ const RideDetails = () => {
 
     setLoading(true);
     try {
-      if (!window.Razorpay) {
-        const loaded = await loadRazorpayScript();
-        if (!loaded) {
-          alert("Failed to load payment gateway.");
-          setLoading(false);
-          return;
-        }
-      }
-
       const orderResponse = await api.post("/payments/create-order", {
         rideId: ride._id,
         seatsBooked: seats,
@@ -556,23 +584,13 @@ const RideDetails = () => {
         },
         prefill: { name: user.name, email: email, contact: phone },
         theme: { color: "#10b981" },
-        modal: {
-          ondismiss: () => {
-            setLoading(false);
-            alert("Payment cancelled");
-          },
-        },
       };
 
-      const razorpay = new window.Razorpay(options);
-      razorpay.on("payment.failed", (resp) => {
-        alert("Failed: " + resp.error.description);
-        setLoading(false);
-      });
-      razorpay.open();
-      setLoading(false);
+      const rzp = new window.Razorpay(options);
+      rzp.open();
     } catch (error) {
-      alert("Payment failed. Please try again.");
+      alert("Payment failed.");
+    } finally {
       setLoading(false);
     }
   };
@@ -586,15 +604,6 @@ const RideDetails = () => {
         >
           ← Back to Search
         </button>
-        {isOwnRide && (
-          <div className="mb-6 bg-yellow-50 border-2 border-yellow-400 rounded-xl p-4 flex items-center gap-3">
-            <AlertCircle className="text-yellow-600" size={24} />
-            <div>
-              <p className="font-bold">This is your ride</p>
-              <p>You cannot book seats on a ride you posted.</p>
-            </div>
-          </div>
-        )}
         <div className="grid md:grid-cols-2 gap-8">
           <div className="bg-white p-8 rounded-3xl shadow-xl">
             <h1 className="text-3xl font-bold mb-4 text-gray-800">
@@ -630,43 +639,21 @@ const RideDetails = () => {
                   <span>₹{totalPrice}</span>
                 </div>
               </div>
-              <div className="space-y-3">
-                <label className="text-sm font-semibold">
-                  Phone Number (10 digits)
-                </label>
-                <div className="relative">
-                  <Phone
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-                    size={20}
-                  />
-                  <input
-                    type="tel"
-                    maxLength="10"
-                    value={phone}
-                    disabled={isOwnRide}
-                    onChange={(e) =>
-                      setPhone(e.target.value.replace(/\D/g, ""))
-                    }
-                    className="w-full pl-12 bg-gray-50 border-2 p-3 rounded-xl focus:border-emerald-500"
-                  />
-                </div>
-              </div>
-              <div className="space-y-3">
-                <label className="text-sm font-semibold">Email Address</label>
-                <div className="relative">
-                  <Mail
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-                    size={20}
-                  />
-                  <input
-                    type="email"
-                    value={email}
-                    disabled={isOwnRide}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full pl-12 bg-gray-50 border-2 p-3 rounded-xl focus:border-emerald-500"
-                  />
-                </div>
-              </div>
+              <input
+                type="tel"
+                maxLength="10"
+                placeholder="Phone Number"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))}
+                className="w-full bg-gray-50 border-2 p-3 rounded-xl focus:border-emerald-500"
+              />
+              <input
+                type="email"
+                placeholder="Email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full bg-gray-50 border-2 p-3 rounded-xl focus:border-emerald-500"
+              />
             </div>
             <button
               onClick={handlePayment}
@@ -675,8 +662,6 @@ const RideDetails = () => {
             >
               {loading
                 ? "Processing..."
-                : !razorpayLoaded
-                ? "Loading..."
                 : isOwnRide
                 ? "Cannot Book Own Ride"
                 : "Proceed to Payment"}
@@ -696,7 +681,7 @@ const RideDetails = () => {
   );
 };
 
-// --- Your Fixed PostRide Component ---
+// --- PostRide Component ---
 const PostRide = () => {
   const navigate = useNavigate();
   const [form, setForm] = useState({
@@ -707,54 +692,15 @@ const PostRide = () => {
     price: "",
     seats: "",
   });
-  const [coords, setCoords] = useState({ from: null, to: null });
   const [loading, setLoading] = useState(false);
-  const [geoLoading, setGeoLoading] = useState(false);
-
-  const getCityFromCoords = async (lat, lng) => {
-    try {
-      const response = await axios.get(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10`
-      );
-      if (response.data && response.data.address) {
-        const address = response.data.address;
-        return (
-          address.city || address.town || address.village || "Unknown Location"
-        );
-      }
-      return "Unknown Location";
-    } catch (error) {
-      return "Unknown Location";
-    }
-  };
-
-  const detectLocation = async () => {
-    setGeoLoading(true);
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const { latitude, longitude } = pos.coords;
-        const cityName = await getCityFromCoords(latitude, longitude);
-        setCoords((prev) => ({
-          ...prev,
-          from: { lat: latitude, lng: longitude },
-        }));
-        setForm((prev) => ({ ...prev, origin: cityName }));
-        setGeoLoading(false);
-      },
-      () => {
-        alert("Enable location access");
-        setGeoLoading(false);
-      }
-    );
-  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const destCoords = await geocodeLocation(form.destination);
-      let originCoords = coords.from || (await geocodeLocation(form.origin));
-      if (!destCoords || !originCoords) {
+      const fromCoords = await geocodeLocation(form.origin);
+      const toCoords = await geocodeLocation(form.destination);
+      if (!fromCoords || !toCoords) {
         alert("Could not find locations");
         setLoading(false);
         return;
@@ -762,8 +708,8 @@ const PostRide = () => {
 
       await api.post("/rides", {
         ...form,
-        fromCoords: originCoords,
-        toCoords: destCoords,
+        fromCoords,
+        toCoords,
         price: parseInt(form.price),
         seats: parseInt(form.seats),
       });
@@ -777,99 +723,56 @@ const PostRide = () => {
   };
 
   return (
-    <div className="min-h-screen pt-24 px-4 bg-gradient-to-br from-emerald-50 to-teal-50 flex items-center justify-center">
+    <div className="min-h-screen pt-24 px-4 flex items-center justify-center">
       <div className="w-full max-w-2xl bg-white p-10 rounded-3xl shadow-2xl">
         <h2 className="text-4xl font-black mb-8 text-gray-800">Post a Ride</h2>
         <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label className="text-sm font-semibold block mb-2">
-              Pickup Location
-            </label>
-            <div className="flex gap-3">
-              <input
-                value={form.origin}
-                onChange={(e) => setForm({ ...form, origin: e.target.value })}
-                className="flex-1 border-2 p-4 rounded-xl focus:border-emerald-500 outline-none"
-                placeholder="City or GPS"
-                required
-              />
-              <button
-                type="button"
-                onClick={detectLocation}
-                disabled={geoLoading}
-                className="bg-emerald-500 text-white p-4 rounded-xl"
-              >
-                {geoLoading ? (
-                  <Loader className="animate-spin" />
-                ) : (
-                  <LocateFixed />
-                )}
-              </button>
-            </div>
-          </div>
-          <div>
-            <label className="text-sm font-semibold block mb-2">
-              Destination
-            </label>
+          <input
+            value={form.origin}
+            onChange={(e) => setForm({ ...form, origin: e.target.value })}
+            className="w-full border-2 p-4 rounded-xl focus:border-emerald-500 outline-none"
+            placeholder="Pickup City"
+            required
+          />
+          <input
+            value={form.destination}
+            onChange={(e) => setForm({ ...form, destination: e.target.value })}
+            className="w-full border-2 p-4 rounded-xl focus:border-emerald-500 outline-none"
+            placeholder="Destination City"
+            required
+          />
+          <div className="grid grid-cols-2 gap-4">
             <input
-              value={form.destination}
-              onChange={(e) =>
-                setForm({ ...form, destination: e.target.value })
-              }
-              className="w-full border-2 p-4 rounded-xl focus:border-emerald-500 outline-none"
-              placeholder="e.g., Bangalore"
+              type="date"
+              value={form.date}
+              min={new Date().toISOString().split("T")[0]}
+              onChange={(e) => setForm({ ...form, date: e.target.value })}
+              className="p-4 border-2 rounded-xl"
+              required
+            />
+            <input
+              type="time"
+              value={form.time}
+              onChange={(e) => setForm({ ...form, time: e.target.value })}
+              className="p-4 border-2 rounded-xl"
               required
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-sm font-semibold block mb-2">Date</label>
-              <input
-                type="date"
-                value={form.date}
-                min={new Date().toISOString().split("T")[0]}
-                onChange={(e) => setForm({ ...form, date: e.target.value })}
-                className="w-full border-2 p-4 rounded-xl outline-none"
-                required
-              />
-            </div>
-            <div>
-              <label className="text-sm font-semibold block mb-2">Time</label>
-              <input
-                type="time"
-                value={form.time}
-                onChange={(e) => setForm({ ...form, time: e.target.value })}
-                className="w-full border-2 p-4 rounded-xl outline-none"
-                required
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-sm font-semibold block mb-2">
-                Price (₹)
-              </label>
-              <input
-                type="number"
-                min="1"
-                value={form.price}
-                onChange={(e) => setForm({ ...form, price: e.target.value })}
-                className="w-full border-2 p-4 rounded-xl outline-none"
-                required
-              />
-            </div>
-            <div>
-              <label className="text-sm font-semibold block mb-2">Seats</label>
-              <input
-                type="number"
-                min="1"
-                max="8"
-                value={form.seats}
-                onChange={(e) => setForm({ ...form, seats: e.target.value })}
-                className="w-full border-2 p-4 rounded-xl outline-none"
-                required
-              />
-            </div>
+            <input
+              type="number"
+              placeholder="Price"
+              onChange={(e) => setForm({ ...form, price: e.target.value })}
+              className="p-4 border-2 rounded-xl"
+              required
+            />
+            <input
+              type="number"
+              placeholder="Seats"
+              onChange={(e) => setForm({ ...form, seats: e.target.value })}
+              className="p-4 border-2 rounded-xl"
+              required
+            />
           </div>
           <button
             type="submit"
@@ -884,14 +787,13 @@ const PostRide = () => {
   );
 };
 
+// --- Auth Component ---
 const Auth = ({ type, setUser }) => {
   const [form, setForm] = useState({ name: "", email: "", password: "" });
-  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
     try {
       const endpoint = type === "login" ? "/auth/login" : "/auth/register";
       const response = await api.post(endpoint, form);
@@ -901,8 +803,6 @@ const Auth = ({ type, setUser }) => {
       navigate("/search");
     } catch (err) {
       alert("Auth failed");
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -942,7 +842,7 @@ const Auth = ({ type, setUser }) => {
             type="submit"
             className="w-full bg-emerald-500 text-white py-4 rounded-xl font-bold shadow-xl"
           >
-            {loading ? "..." : type === "login" ? "Login" : "Sign Up"}
+            {type === "login" ? "Login" : "Sign Up"}
           </button>
         </form>
       </div>
@@ -950,16 +850,20 @@ const Auth = ({ type, setUser }) => {
   );
 };
 
+// --- Main App Component ---
+
 function App() {
   const [user, setUser] = useState(
     localStorage.getItem("user")
       ? JSON.parse(localStorage.getItem("user"))
       : null
   );
+
   const logout = () => {
     localStorage.clear();
     setUser(null);
   };
+
   const Protected = ({ children }) =>
     user ? children : <Navigate to="/login" />;
 

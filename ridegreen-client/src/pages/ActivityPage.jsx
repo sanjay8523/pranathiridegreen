@@ -1,4 +1,4 @@
-// Complete ActivityPage.jsx with integrated rating system
+// Fixed ActivityPage.jsx with corrected rating logic
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
@@ -67,15 +67,16 @@ const ActivityPage = () => {
   const handleCompleteRide = async (rideId) => {
     if (
       !window.confirm(
-        "Mark this ride as completed? Passengers will be able to rate you after this."
+        "Mark this ride as completed? All passengers will be able to rate you after this."
       )
     )
       return;
 
     try {
-      await api.put(`/rides/${rideId}/complete`);
+      const response = await api.put(`/rides/${rideId}/complete`);
       alert(
-        "Ride marked as completed! Passengers can now rate their experience."
+        response.data.message ||
+          "Ride marked as completed! Passengers can now rate their experience."
       );
       fetchActivity();
     } catch (error) {
@@ -247,20 +248,29 @@ const ActivityPage = () => {
                       </div>
                     )}
 
-                    {/* Complete Ride Button */}
-                    {ride.status === "active" &&
+                    {/* Complete Ride Button - Show for active rides OR completed rides with all seats booked */}
+                    {((ride.status === "active" &&
                       ride.bookings &&
-                      ride.bookings.length > 0 && (
-                        <button
-                          onClick={() => handleCompleteRide(ride._id)}
-                          className="w-full bg-emerald-500 hover:bg-emerald-600 text-white py-2 rounded-lg font-semibold transition"
-                        >
-                          Mark as Completed
-                        </button>
-                      )}
+                      ride.bookings.length > 0) ||
+                      (ride.status === "completed" &&
+                        ride.availableSeats === 0)) && (
+                      <button
+                        onClick={() => handleCompleteRide(ride._id)}
+                        disabled={ride.status === "completed"}
+                        className={`w-full py-2 rounded-lg font-semibold transition ${
+                          ride.status === "completed"
+                            ? "bg-gray-300 text-gray-600 cursor-not-allowed"
+                            : "bg-emerald-500 hover:bg-emerald-600 text-white"
+                        }`}
+                      >
+                        {ride.status === "completed"
+                          ? "Ride Completed ✓"
+                          : "Mark as Completed"}
+                      </button>
+                    )}
 
                     {ride.status === "completed" && (
-                      <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+                      <div className="bg-blue-50 p-3 rounded-lg border border-blue-200 mt-3">
                         <p className="text-xs text-blue-800 flex items-center gap-1">
                           <Shield size={14} />
                           Ride completed. Funds will be released 2 days after
@@ -355,15 +365,9 @@ const ActivityPage = () => {
                           </>
                         )}
                       </div>
-                      <div className="bg-white p-3 rounded-lg border border-blue-200">
-                        <p className="text-xs text-gray-600">
-                          Status: {booking.status} | Escrow:{" "}
-                          {booking.escrowStatus}
-                        </p>
-                      </div>
                     </div>
 
-                    {/* Rate Driver Button */}
+                    {/* Rate Driver Button - Show ONLY for completed rides that haven't been rated */}
                     {booking.status === "completed" && !booking.rated && (
                       <button
                         onClick={() => handleRateUser(booking)}
@@ -383,16 +387,15 @@ const ActivityPage = () => {
                       </div>
                     )}
 
-                    {booking.status !== "completed" &&
-                      booking.status !== "cancelled" && (
-                        <div className="bg-green-50 p-3 rounded-lg border border-green-200">
-                          <p className="text-xs text-green-800 flex items-center gap-1">
-                            <TrendingUp size={14} />
-                            Ride is {booking.status}. Driver will receive
-                            payment 2 days after completion.
-                          </p>
-                        </div>
-                      )}
+                    {booking.status === "confirmed" && (
+                      <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-200">
+                        <p className="text-xs text-yellow-800 flex items-center gap-1">
+                          <AlertCircle size={14} />
+                          Ride confirmed. Rating will be available after driver
+                          marks ride as completed.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

@@ -52,6 +52,7 @@ router.post("/", auth, async (req, res) => {
       vehicleInfo,
       preferences,
       verified: true,
+      status: "active", // Always starts as active
     });
 
     const savedRide = await newRide.save();
@@ -67,7 +68,7 @@ router.post("/", auth, async (req, res) => {
   }
 });
 
-// 2. GET ALL ACTIVE RIDES - WITH EXACT LOCATION MATCHING
+// 2. GET ALL ACTIVE RIDES
 router.get("/", async (req, res) => {
   try {
     const { origin, destination, date } = req.query;
@@ -77,7 +78,6 @@ router.get("/", async (req, res) => {
       availableSeats: { $gt: 0 },
     };
 
-    // Exact location matching
     if (origin) {
       filter.origin = normalizeLocation(origin);
     }
@@ -218,7 +218,7 @@ router.put("/:id", auth, async (req, res) => {
   }
 });
 
-// 6. MARK RIDE AS COMPLETED - PROTECTED
+// 6. MARK RIDE AS COMPLETED - MANUAL ONLY (Driver clicks button)
 router.put("/:id/complete", auth, async (req, res) => {
   try {
     const ride = await Ride.findById(req.params.id);
@@ -231,10 +231,30 @@ router.put("/:id/complete", auth, async (req, res) => {
       return res.status(403).json({ error: "Only driver can complete ride" });
     }
 
+    if (ride.status === "completed") {
+      return res
+        .status(400)
+        .json({ error: "Ride already marked as completed" });
+    }
+
+    // Get all confirmed bookings for this ride
+    const confirmedBookings = await Booking.find({
+      ride: req.params.id,
+      status: "confirmed",
+    });
+
+    if (confirmedBookings.length === 0) {
+      return res.status(400).json({
+        error:
+          "No confirmed bookings found. Cannot complete ride without passengers.",
+      });
+    }
+
+    // Mark ride as completed
     ride.status = "completed";
     await ride.save();
 
-    // Update bookings to completed
+    // Update ALL confirmed bookings to completed
     await Booking.updateMany(
       { ride: req.params.id, status: "confirmed" },
       { $set: { status: "completed" } }
@@ -247,8 +267,9 @@ router.put("/:id/complete", auth, async (req, res) => {
 
     res.json({
       success: true,
-      message: "Ride marked as completed",
+      message: `Ride marked as completed. ${confirmedBookings.length} passenger(s) can now rate their experience.`,
       ride,
+      passengersCount: confirmedBookings.length,
     });
   } catch (err) {
     console.error("Error completing ride:", err);
